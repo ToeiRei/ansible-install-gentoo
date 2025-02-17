@@ -91,17 +91,31 @@ nfs_portage_path: "/path/to/Portage"  # The path to Portage on the NFS server
 ## Frequently Asked Questions (FAQs)
 
 **Why on earth would you automate a Gentoo install?**
-> Look, sometimes even we tech wizards get tired of the same old grind. A vanilla Gentoo base install can be *so* tedious! This playbook is all about efficiency and letting you skip those boring steps while still having control over the core setup.
+> Look, sometimes even we tech wizards get tired of the same old grind. A vanilla Gentoo base install can be _so_ tedious! This playbook is all about efficiency and letting you skip those boring steps while still having control over the core setup.
 
- **Why Ansible? Why not something else?** 
+**Why Ansible? Why not something else?** 
 > Ansible's like the organized friend who always has a plan (and knows how to execute it). It's structured, easy to read, and lets me manage the installation in a clean, repeatable way. Plus,  it doesn't require an agent on the target machine – just SSH access! That means no extra software to install or configure. Sharing this playbook means others can benefit from the same sanity!
 
- **Are you weird?**
+**Are you weird?**
 > Meow.  (Just kidding - sort of.)
 
-**How long does it take?**
-> On a VM with 4 cores and 8 GB of RAM (AMD EPYC 7282, KVM hypervisor), the entire process took roughly 2 hours. Keep in mind that runtime can vary depending on your hardware and network conditions.
+ **How long does it take?**
+> On a VM with 4 cores and 8 GB of RAM (AMD EPYC 7282, KVM hypervisor), the entire process took roughly 2 hours. Keep in mind that runtime can vary depending on your hardware and network conditions.   
 
+**What exactly gets installed?**
+> This playbook sets up a bare-bones Gentoo base system with essential tools like `htop`, `hyfetch`, `systemd`, and `network-manager`. It doesn't include any user accounts, giving you a completely clean slate to work with.
+
+ **WARNING:** The installation process will erase EVERYTHING on the target disk!  Make absolutely sure there is nothing important you want to keep on that drive before running the playbook. 
+
+**How do I update the playbook?**
+> Simply use `git pull` in the directory where you cloned the repository. This will download any changes made to the playbook. Review the updated `settings.yml` file to see what's new!
+
+
+ **What should I do after the playbook finishes?**
+> Once the playbook has run successfully, you have a fresh Gentoo base system ready for customization! Set your hostname, emerge additional software packages using `emerge`, or explore other specialized playbooks (we might add some later!)
+
+ **Do I need any special tools besides Ansible?**
+> Yes, Git is required to clone and manage the playbook repository. You also may want to have a text editor like vi, vim, nano, pico,... 
 
 ## Need Help?
 
