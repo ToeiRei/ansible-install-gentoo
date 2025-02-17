@@ -423,10 +423,10 @@
         mode: '0644'
 
     - name: Enable SSH
-      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; systemctl enable sshd"
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; systemctl enable sshd'"
 
     - name: Enable NetworkManager
-      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; systemctl enable NetworkManager"
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; systemctl enable NetworkManager'"
 
     - name: Unmount chroot system dirs
       command: umount -lR /mnt/gentoo/{dev,proc,sys,run}
@@ -436,4 +436,3 @@
   handlers:
   - name: Update CA certificates
     command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; /usr/sbin/update-ca-certificates'"
-  
