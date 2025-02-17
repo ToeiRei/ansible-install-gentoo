@@ -7,6 +7,7 @@
     - settings.yml
 
   tasks:
+
     - name: Make sure swap is off
       command: swapoff --all
       changed_when: true
@@ -356,8 +357,20 @@
     - name: Generate Kernel with Genkernel
       command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; genkernel --no-menuconfig all'"
 
-    - name: Install GRUB
-      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Gentoo'"
+    - name: Check if system is running in EFI mode
+      stat:
+        path: "/sys/firmware/efi"
+      register: efi_check
+
+    - name: Install GRUB for UEFI
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Gentoo'"
+      when: efi_check.stat.exists
+      changed_when: true
+
+    - name: Install GRUB for Legacy BIOS
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; grub-install --target=i386-pc {{ main_disk }}'"
+      when: not efi_check.stat.exists
+      changed_when: true
 
     - name: Generate GRUB Config
       command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; grub-mkconfig -o /boot/grub/grub.cfg'"
@@ -410,10 +423,10 @@
         mode: '0644'
 
     - name: Enable SSH
-      command: chroot /mnt/gentoo systemctl enable sshd
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; systemctl enable sshd"
 
     - name: Enable NetworkManager
-      command: chroot /mnt/gentoo systemctl enable NetworkManager
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; systemctl enable NetworkManager"
 
     - name: Unmount chroot system dirs
       command: umount -lR /mnt/gentoo/{dev,proc,sys,run}
