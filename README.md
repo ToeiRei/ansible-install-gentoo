@@ -139,7 +139,7 @@ I'm constantly working to improve this playbook. Here are some things I plan to 
 * **Smart NFS Handling:**  Don't attempt to use NFS if the `nfs_portage_*` variables aren't set. 
 * **Missing Config Checks:** Add checks for crucial configurations like SSH keys or certificates. If something's missing, provide clear guidance to the user on how to fix it.
 * **Optional Certificate Handling:**  Make the `pem_file_path` setting optional, allowing installations that don't require specific certificate verification.
-
+* **Hostname:** Set the hostname in the settings.yml file or as a parameter
 
 Get Involved:   
 
