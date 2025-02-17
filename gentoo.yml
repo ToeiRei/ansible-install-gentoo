@@ -8,6 +8,28 @@
 
   tasks:
 
+    - name: Validate Gentoo Mirror Reachability
+      command: "curl --silent --head --fail {{ gentoo_mirror }}"
+      register: mirror_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Fail if Gentoo Mirror is Unreachable
+      fail:
+        msg: "ERROR: Gentoo mirror {{ gentoo_mirror }} is unreachable. Please check your settings."
+      when: mirror_check.rc != 0
+
+    - name: Validate SSH Key URL
+      command: "curl --silent --head --fail {{ authorized_keys_url }}"
+      register: ssh_key_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Warn if SSH Key URL is unreachable
+      debug:
+        msg: "WARNING: Could not fetch SSH keys from {{ authorized_keys_url }}! Root login might fail."
+      when: ssh_key_check.rc != 0
+
     - name: Make sure swap is off
       command: swapoff --all
       changed_when: true
@@ -30,16 +52,16 @@
       changed_when: true
 
     - name: Create GPT partition table
-      command: parted -s {{ main_disk }} mklabel gpt
-      changed_when: true
+      command: parted -s {{ main_disk }} mklabel gpt 
+      changed_when: true 
 
     - name: Create EFI partition
-      command: parted -s {{ main_disk }} mkpart ESP fat32 1MiB 513MiB
-      changed_when: true
+      command: parted -s {{ main_disk }} mkpart ESP fat32 1MiB 513MiB 
+      changed_when: true 
 
-    - name: Set EFI partition boot flag
-      command: parted -s {{ main_disk }} set 1 boot on
-      changed_when: true
+    - name: Set EFI partition boot flag 
+      command: parted -s {{ main_disk }} set 1 boot on 
+      changed_when: true          
 
     - name: Get total RAM in MB
       shell: free -m | awk '/Mem:/ {print $2}'
@@ -51,37 +73,54 @@
       register: disk_size_gb
       changed_when: false
 
-    - name: Calculate Swap Size
+    - name: Calculate Swap Size (capped at 20% of disk, min 1GB)
       set_fact:
         swap_size_gb: >-
-          {{ ((ram_mb.stdout | int * 2) / 1024) | int if ram_mb.stdout | int <= 2048
-          else ((ram_mb.stdout | int * 1.5) / 1024) | int if ram_mb.stdout | int < 8192
-          else ((ram_mb.stdout | int) / 1024) | int }}
+          {{
+            [
+              ((ram_mb.stdout | int * 2) / 1024) | int if ram_mb.stdout | int <= 2048
+              else ((ram_mb.stdout | int * 1.5) / 1024) | int if ram_mb.stdout | int < 8192
+              else ((ram_mb.stdout | int) / 1024) | int,
+              (disk_size_gb.stdout | int * 0.2) | int,
+              1 
+            ] | max
+          }}
+
+    - name: Debug Swap Calculation
+      debug:
+        msg: "RAM: {{ ram_mb.stdout }} MB, Disk: {{ disk_size_gb.stdout }} GB, Calculated Swap: {{ swap_size_gb }} GB"
+
 
     - name: Create Swap partition
-      command: >
-        parted {{ main_disk }} mkpart primary linux-swap 1GiB {{ 1 + swap_size_gb | int }}GiB
-      changed_when: true
+      command: > 
+        parted -s {{ main_disk }} mkpart primary linux-swap "{{ 513 + 1 }}MiB" "{{ 513 + 1 + swap_size_gb | int }}MiB"
+      changed_when: true 
 
     - name: Create Root partition (BTRFS)
-      command: parted -s {{ main_disk }} mkpart primary btrfs {{ 1 + swap_size_gb | int }}GiB 100%
-      changed_when: true
-
+      command: >
+        parted -s {{ main_disk }} mkpart primary btrfs "{{ 513 + 1 + swap_size_gb | int }}MiB" "100%"
+      changed_when: true       
+  
     - name: Format EFI partition as FAT32
-      command: mkfs.fat -F32 {{ main_disk }}1
-      changed_when: true
+      community.general.filesystem:
+        fstype: vfat
+        dev: "{{ main_disk }}1"
+        opts: "-F32"
 
     - name: Format Swap partition
-      command: mkswap {{ main_disk }}2
-      changed_when: true
+      community.general.filesystem:
+        fstype: swap
+        dev: "{{ main_disk }}2"
 
     - name: Enable swap
       command: swapon {{ main_disk }}2
       changed_when: true
 
     - name: Format Root partition as BTRFS
-      command: mkfs.btrfs -f {{ main_disk }}3
-      changed_when: true
+      community.general.filesystem:
+        fstype: btrfs
+        dev: "{{ main_disk }}3"
+        opts: "-f"
 
     - name: Ensure /mnt/gentoo exists
       file:
@@ -222,6 +261,7 @@
         path: "/mnt/gentoo/etc/portage/make.conf"
         create: true
         block: |
+          USE="dbus networkmanager"
           # Host Settings and Compiler Options
           # =================================
           CHOST="x86_64-pc-linux-gnu"
@@ -258,12 +298,10 @@
         group: root
         mode: '0644'
 
-
     - name: Check if NAS is reachable
-      command: ping -c 1 {{ nfs_portage_host }}
+      command: "ping -c 1 {{ nfs_portage_host }}"
       register: nas_ping
       ignore_errors: true
-      changed_when: false
 
     - name: Add Portage NFS mount to fstab
       ansible.builtin.lineinfile:
@@ -322,40 +360,17 @@
         group: root
         mode: '0755'
 
-    - name: Allow vanilla-sources keywording
+    - name: Set USE for installkernel
       ansible.builtin.lineinfile:
-        path: "/mnt/gentoo/etc/portage/package.accept_keywords/kernel"
+        path: "/mnt/gentoo/etc/portage/package.use/kernel"
         create: true
-        line: "sys-kernel/vanilla-sources ~amd64"
+        line: "sys-kernel/installkernel dracut"
         owner: root
         group: root
         mode: '0644'
 
-    - name: Install Kernel and Bootloader
-      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; emerge sys-kernel/genkernel sys-kernel/vanilla-sources sys-boot/grub'"
-
-    - name: Ensure genkernel.conf has required settings
-      ansible.builtin.lineinfile:
-        path: "/mnt/gentoo/etc/genkernel.conf"
-        regexp: "^{{ item.key }}(\\s*)="
-        line: "{{ item.key }}=\"{{ item.value }}\""
-        create: yes
-      loop:
-        - { key: "INSTALL", value: "yes" }
-        - { key: "OLDCONFIG", value: "yes" }
-        - { key: "MENUCONFIG", value: "yes" }
-        - { key: "CHECK_FREE_DISK_SPACE_BOOTDIR", value: "20" }
-        - { key: "BUSYBOX", value: "yes" }
-        - { key: "E2FSPROGS", value: "yes" }
-        - { key: "BTRFS", value: "yes" }
-        - { key: "BOOTLOADER", value: "grub2" }
-        - { key: "MODULEREBUILD", value: "yes" }
-
-    - name: Set our kernel sources symlink
-      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; eselect kernel set 1'"
-
-    - name: Generate Kernel with Genkernel
-      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; genkernel --no-menuconfig all'"
+    - name: Install Kernel, Firmware and Bootloader
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; emerge --quiet-build  linux-firmware sys-kernel/installkernel gentoo-kernel-bin sys-boot/grub'"
 
     - name: Check if system is running in EFI mode
       stat:
@@ -385,12 +400,13 @@
       when: "'qemu' in virt_type.stdout or 'kvm' in virt_type.stdout"
 
     - name: Install Essential Packages
-      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; emerge app-backup/borgmatic app-emulation/qemu-guest-agent dev-vcs/git app-misc/screen sys-process/htop app-misc/hyfetch app-admin/needrestart net-misc/openssh sys-apps/rng-tools net-misc/networkmanager'"
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; emerge app-backup/borgmatic dev-vcs/git app-misc/screen sys-process/htop app-misc/hyfetch app-admin/needrestart net-misc/openssh sys-apps/rng-tools net-misc/networkmanager'"
 
-    - name: Import domain certificate
+    - name: Import domain certificate (if available)
       copy:
         src: "{{ pem_file_path }}"
         dest: /mnt/gentoo/usr/local/share/ca-certificates/
+      when: pem_file_path is defined and pem_file_path | length > 0        
       notify: Update CA certificates
 
     - name: Enable root login via ssh keys
@@ -428,6 +444,18 @@
     - name: Enable NetworkManager
       command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; systemctl enable NetworkManager'"
 
+    - name: Set system hostname
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; echo {{ hostname.split('.')[0] }} > /etc/hostname'"
+      changed_when: true
+
+    - name: Update /etc/hosts with FQDN and shortname
+      blockinfile:
+        path: "/mnt/gentoo/etc/hosts"
+        block: |
+          127.0.0.1    {{ hostname.split('.')[0] }} {{ hostname }}
+          127.0.0.1    localhost
+        state: present
+
     - name: Unmount chroot system dirs
       command: umount -lR /mnt/gentoo/{dev,proc,sys,run}
       changed_when: true
@@ -436,3 +464,4 @@
   handlers:
   - name: Update CA certificates
     command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; /usr/sbin/update-ca-certificates'"
+  
