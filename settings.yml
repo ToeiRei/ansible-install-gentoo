@@ -2,7 +2,7 @@
 
 # Disk Configuration 
 main_disk: "/dev/sda"  # The device where Gentoo will be installed.
-
+hostname: "gensible.example.com"  # Full name + domain of the target PC
 # Gentoo Configuration
 gentoo_mirror: "http://mirror.init7.net/gentoo/releases/amd64/autobuilds/current-stage3-amd64-systemd" # Gentoo Stage 3 mirror URL
 gentoo_profile: "default/linux/amd64/23.0/systemd"  # The Gentoo profile to use
