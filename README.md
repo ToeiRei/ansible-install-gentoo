@@ -67,10 +67,33 @@ This playbook is designed to automate a barebones Gentoo installation. Here's ho
    ```
 
 
+## settings.yml (Configuration)
 
-**Need Help?**:
+This file lets you customize the installation process to your specific needs. Modify the variables below according to your setup:
 
-*  If you run into issues, check out the Ansible documentation ([https://docs.ansible.com/](https://docs.ansible.com/)):  They've got tons of resources for troubleshooting and getting started.
+```yaml
+# This is the config for the playbook
+
+# Disk Configuration 
+main_disk: "/dev/sda"  # The device where Gentoo will be installed.
+
+# Gentoo Configuration
+gentoo_mirror: "http://mirror.init7.net/gentoo/releases/amd64/autobuilds/current-stage3-amd64-systemd" # Gentoo Stage 3 mirror URL
+gentoo_profile: "default/linux/amd64/23.0/systemd"  # The Gentoo profile to use
+
+# Your Custom Settings
+pem_file_path: "ucs-root-ca.pem"   # Path to your root CA certificate file (e.g., for SSL verification) 
+authorized_keys_url: "https://go.stargazer.at/authorized_keys" # URL pointing to a file containing your public SSH keys
+nfs_portage_host: "nfs-server.local"  # If using NFS for Portage, specify the host name or IP address. (Example)
+nfs_portage_path: "/path/to/Portage"  # The path to Portage on the NFS server
+```
+
+
+## Need Help?
+
+* If you run into issues, check out the Ansible documentation ([https://docs.ansible.com/](https://docs.ansible.com/)):  They've got tons of resources for troubleshooting and getting started.
+* Open Issues in this repo if you spot a mistake in this playbook
+* Make a pull-request to ask me to change things or add features
 
 ## Changes
 - **2025-02-16**:  Initial import, lots of swearing and wishing I would have never started
