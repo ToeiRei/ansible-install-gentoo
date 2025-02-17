@@ -1,0 +1,426 @@
+---
+- name: Automate a Gentoo Setup
+  hosts: all
+  gather_facts: yes
+
+  vars_files:
+    - settings.yml
+
+  tasks:
+    - name: Make sure swap is off
+      command: swapoff --all
+      changed_when: true
+
+    - name: Find and unmount all partitions on {{ main_disk }}
+      shell: |
+        findmnt -rn -o TARGET -S {{ main_disk }}* || true
+      register: mounted_points
+      changed_when: false
+
+    - name: Unmount all detected mounts
+      command: umount -R {{ item }}
+      loop: "{{ mounted_points.stdout_lines }}"
+      when: mounted_points.stdout_lines | length > 0
+      ignore_errors: true
+      changed_when: false
+
+    - name: Wipe existing partitions
+      command: wipefs --all {{ main_disk }}
+      changed_when: true
+
+    - name: Create GPT partition table
+      command: parted -s {{ main_disk }} mklabel gpt
+      changed_when: true
+
+    - name: Create EFI partition
+      command: parted -s {{ main_disk }} mkpart ESP fat32 1MiB 513MiB
+      changed_when: true
+
+    - name: Set EFI partition boot flag
+      command: parted -s {{ main_disk }} set 1 boot on
+      changed_when: true
+
+    - name: Get total RAM in MB
+      shell: free -m | awk '/Mem:/ {print $2}'
+      register: ram_mb
+      changed_when: false
+
+    - name: Get disk size in GiB
+      shell: lsblk -b -n -o SIZE {{ main_disk }} | awk '{print int($1 / (1024*1024*1024))}'
+      register: disk_size_gb
+      changed_when: false
+
+    - name: Calculate Swap Size
+      set_fact:
+        swap_size_gb: >-
+          {{ ((ram_mb.stdout | int * 2) / 1024) | int if ram_mb.stdout | int <= 2048
+          else ((ram_mb.stdout | int * 1.5) / 1024) | int if ram_mb.stdout | int < 8192
+          else ((ram_mb.stdout | int) / 1024) | int }}
+
+    - name: Create Swap partition
+      command: >
+        parted {{ main_disk }} mkpart primary linux-swap 1GiB {{ 1 + swap_size_gb | int }}GiB
+      changed_when: true
+
+    - name: Create Root partition (BTRFS)
+      command: parted -s {{ main_disk }} mkpart primary btrfs {{ 1 + swap_size_gb | int }}GiB 100%
+      changed_when: true
+
+    - name: Format EFI partition as FAT32
+      command: mkfs.fat -F32 {{ main_disk }}1
+      changed_when: true
+
+    - name: Format Swap partition
+      command: mkswap {{ main_disk }}2
+      changed_when: true
+
+    - name: Enable swap
+      command: swapon {{ main_disk }}2
+      changed_when: true
+
+    - name: Format Root partition as BTRFS
+      command: mkfs.btrfs -f {{ main_disk }}3
+      changed_when: true
+
+    - name: Ensure /mnt/gentoo exists
+      file:
+        path: /mnt/gentoo
+        state: directory
+        mode: '0755'
+
+    - name: Ensure /mnt/btrfs exists
+      file:
+        path: /mnt/btrfs
+        state: directory
+        mode: '0755'
+
+
+    - name: Ensure Btrfs filesystem is mounted
+      ansible.posix.mount:
+        path: "/mnt/btrfs"
+        src: "{{ main_disk }}3"
+        fstype: "btrfs"
+        opts: "defaults"
+        state: mounted
+
+    - name: Create Btrfs subvolumes
+      community.general.btrfs_subvolume:
+        filesystem_device: "{{ main_disk }}3"
+        name: "{{ item }}"
+        automount: true
+      loop:
+        - "@rootfs"      # Rootfs aka /
+        - "@home"        # Home gets its own subvolume
+        - "@logs"        # Logs are isolated (nodev, nosuid)
+        - "@sandbox"     # Portage gets a dedicated subvolume
+
+    - name: Mount /mnt/gentoo with @rootfs
+      ansible.posix.mount:
+        path: "/mnt/gentoo"
+        src: "{{ main_disk }}3"
+        fstype: "btrfs"
+        opts: "subvol=@rootfs,defaults"
+        state: mounted
+
+    - name: Create boot directory
+      file:
+        path: /mnt/gentoo/boot
+        state: directory
+
+    - name: Create EFI mount directory
+      file:
+        path: /mnt/gentoo/boot/efi
+        state: directory
+
+    - name: Mount Btrfs subvolumes & system dirs
+      ansible.posix.mount:
+        path: "/mnt/gentoo/{{ item.path }}"
+        src: "{{ item.src }}"
+        fstype: "{{ item.fstype }}"
+        opts: "{{ item.opts }}"
+        state: mounted
+      ignore_errors: true
+      loop:
+        - { path: "boot/efi", src: "{{ main_disk }}1", fstype: "vfat", opts: "defaults" }
+        - { path: "dev", src: "/dev", fstype: "none", opts: "rbind" }
+        - { path: "proc", src: "none", fstype: "proc", opts: "defaults" }
+        - { path: "sys", src: "/sys", fstype: "none", opts: "rbind" }
+        - { path: "run", src: "/run", fstype: "none", opts: "rbind" }
+        - { path: "home", src: "{{ main_disk }}3", fstype: "btrfs", opts: "noatime,subvol=@home" }
+        - { path: "var/tmp/portage", src: "{{ main_disk }}3", fstype: "btrfs", opts: "noatime,subvol=@sandbox" }
+        - { path: "var/log", src: "{{ main_disk }}3", fstype: "btrfs", opts: "noatime,subvol=@logs,nodev,nosuid,noexec" }
+
+    - name: Ensure Btrfs filesystem is mounted
+      ansible.posix.mount:
+        path: "/mnt/btrfs"
+        state: unmounted
+
+    - name: Download latest stage3 file list
+      get_url:
+        url: "{{ gentoo_mirror }}/latest-stage3-amd64-systemd.txt"
+        dest: /mnt/gentoo/latest-stage3.txt
+
+    - name: Extract stage3 tarball filename
+      shell: grep -Eo 'stage3-amd64-systemd-[0-9TZ]+.tar.xz' /mnt/gentoo/latest-stage3.txt
+      register: stage3_filename
+      changed_when: false
+
+    - name: Download the latest stage3 tarball
+      get_url:
+        url: "{{ gentoo_mirror }}/{{ stage3_filename.stdout }}"
+        dest: "/mnt/gentoo/{{ stage3_filename.stdout }}"
+
+    - name: Extract Stage3 tarball
+      command: tar xpf /mnt/gentoo/{{ stage3_filename.stdout }} --xattrs-include='*.*' --numeric-owner -C /mnt/gentoo
+      args:
+        chdir: /mnt/gentoo
+      changed_when: true
+
+    - name: Copy resolv.conf
+      ansible.builtin.copy:
+        remote_src: true
+        src: '/etc/resolv.conf'
+        dest: '/mnt/gentoo/etc/resolv.conf'
+        owner: root
+        group: root
+        mode: '0664'
+
+    - name: Ensure root has .ssh
+      ansible.builtin.file:
+        path: '/mnt/gentoo/root/.ssh'
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Add SSH key to root
+      get_url:
+        url: "{{ authorized_keys_url }}"
+        dest: /mnt/gentoo/root/.ssh/authorized_keys
+        mode: '0600'
+
+    - name: Write fstab
+      ansible.posix.mount:
+        fstab: '/mnt/gentoo/etc/fstab'
+        path: "/{{ item.path }}"
+        src: "{{ item.src }}"
+        fstype: "{{ item.fstype }}"
+        opts: "{{ item.opts }}"
+        state: 'present'
+      loop:
+        - { path: "boot/efi", src: "{{ main_disk }}1", fstype: "vfat", opts: "noauto" }
+        - { path: "none", src: "{{ main_disk }}2", fstype: "swap", opts: "sw" }
+        - { path: "/", src: "{{ main_disk }}3", fstype: "btrfs", opts: "subvol=@rootfsdefaults,noatime" }
+        - { path: "/home", src: "{{ main_disk }}3", fstype: "btrfs", opts: "subvol=@home,defaults,noatime" }
+        - { path: "/var/tmp/portage", src: "{{ main_disk }}3", fstype: "btrfs", opts: "subvol=@sandbox,defaults,noatime" }
+        - { path: "/var/log", src: "{{ main_disk }}3", fstype: "btrfs", opts: "subvol=@logs,defaults,noatime,nodev,nosuid,noexec" }
+
+
+    - name: Generate make.conf
+      ansible.builtin.blockinfile:
+        path: "/mnt/gentoo/etc/portage/make.conf"
+        create: true
+        block: |
+          # Host Settings and Compiler Options
+          # =================================
+          CHOST="x86_64-pc-linux-gnu"
+          CFLAGS="-march=native -pipe -O2"
+          CXXFLAGS="${CFLAGS}"
+          MAKEOPTS="--jobs {{ ansible_processor_vcpus }} --load-average {{ ansible_processor_vcpus | int + 1 }}"
+
+          # Advanced Masking
+          # ================
+          ACCEPT_KEYWORDS="amd64"
+
+          # Portage Directories
+          # ===================
+          PORTAGE_TMPDIR=/var/tmp
+          PORTDIR=/usr/portage
+          DISTDIR=/usr/portage/distfiles
+          PKGDIR=/usr/local/portage/Packages
+          PORT_LOGDIR=/var/log/portage
+
+          EMERGE_DEFAULT_OPTS="--binpkg-changed-deps=y"
+          PORTAGE_RSYNC_EXTRA_OPTS="--no-perms"
+
+          # Advanced Features
+          # =================
+          AUTOCLEAN="yes"
+          FEATURES="-buildpkg -ccache distlocks sandbox strict userpriv usersandbox clean-logs -metadata-transfer network-sandbox"
+
+          ACCEPT_LICENSE="*"
+
+    - name: Ensure make.conf permissions are correct
+      ansible.builtin.file:
+        path: "/mnt/gentoo/etc/portage/make.conf"
+        owner: root
+        group: root
+        mode: '0644'
+
+
+    - name: Check if NAS is reachable
+      command: ping -c 1 {{ nfs_portage_host }}
+      register: nas_ping
+      ignore_errors: true
+      changed_when: false
+
+    - name: Add Portage NFS mount to fstab
+      ansible.builtin.lineinfile:
+        path: "/mnt/gentoo/etc/fstab"
+        line: "{{ nfs_portage_host }}:{{ nfs_portage_path }} /usr/portage nfs4 defaults,noatime 0 0"
+        state: present
+      when: nas_ping.rc == 0
+
+    - name: Ensure /mnt/gentoo/usr/portage exists
+      file:
+        path: /mnt/gentoo/usr/portage
+        state: directory
+        mode: '0755'
+
+    - name: Mount Portage from NAS
+      command: mount -t nfs4 {{ nfs_portage_host }}:{{ nfs_portage_path }} /mnt/gentoo/usr/portage
+      when: nas_ping.rc == 0
+      changed_when: true
+
+    - name: Initialize Portage with webrsync
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; emerge-webrsync'"
+      when: nas_ping.rc != 0
+      changed_when: true
+
+    - name: Sync Portage tree
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; emerge --quiet --sync'"
+      when: nas_ping.rc != 0
+      changed_when: true
+
+    - name: Set Profile to {{ gentoo_profile }}
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; eselect profile set {{ gentoo_profile }}'"
+      changed_when: true
+
+
+    - name: Install cpuid2cpuflags in chroot
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; emerge --quiet app-portage/cpuid2cpuflags'"
+      args:
+        creates: "/mnt/gentoo/usr/bin/cpuid2cpuflags"
+
+    - name: Detect CPU flags
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; cpuid2cpuflags'"
+      register: cpu_flags
+      changed_when: false
+
+    - name: Append CPU_FLAGS_X86 to make.conf
+      ansible.builtin.lineinfile:
+        path: "/mnt/gentoo/etc/portage/make.conf"
+        line: "CPU_FLAGS_X86=\"{{ cpu_flags.stdout | default('unset') }}\""
+        insertafter: "^CXXFLAGS="
+
+    - name: Ensure package.accept_keywords directory exists
+      ansible.builtin.file:
+        path: "/mnt/gentoo/etc/portage/package.accept_keywords"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Allow vanilla-sources keywording
+      ansible.builtin.lineinfile:
+        path: "/mnt/gentoo/etc/portage/package.accept_keywords/kernel"
+        create: true
+        line: "sys-kernel/vanilla-sources ~amd64"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install Kernel and Bootloader
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; emerge sys-kernel/genkernel sys-kernel/vanilla-sources sys-boot/grub'"
+
+    - name: Ensure genkernel.conf has required settings
+      ansible.builtin.lineinfile:
+        path: "/mnt/gentoo/etc/genkernel.conf"
+        regexp: "^{{ item.key }}(\\s*)="
+        line: "{{ item.key }}=\"{{ item.value }}\""
+        create: yes
+      loop:
+        - { key: "INSTALL", value: "yes" }
+        - { key: "OLDCONFIG", value: "yes" }
+        - { key: "MENUCONFIG", value: "yes" }
+        - { key: "CHECK_FREE_DISK_SPACE_BOOTDIR", value: "20" }
+        - { key: "BUSYBOX", value: "yes" }
+        - { key: "E2FSPROGS", value: "yes" }
+        - { key: "BTRFS", value: "yes" }
+        - { key: "BOOTLOADER", value: "grub2" }
+        - { key: "MODULEREBUILD", value: "yes" }
+
+    - name: Set our kernel sources symlink
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; eselect kernel set 1'"
+
+    - name: Generate Kernel with Genkernel
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; genkernel --no-menuconfig all'"
+
+    - name: Install GRUB
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Gentoo'"
+
+    - name: Generate GRUB Config
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; grub-mkconfig -o /boot/grub/grub.cfg'"
+
+    - name: Detect if Running in VM
+      shell: "systemd-detect-virt"
+      register: virt_type
+      changed_when: false
+
+    - name: Install QEMU Guest Agent (if VM)
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; emerge app-emulation/qemu-guest-agent'"
+      when: "'qemu' in virt_type.stdout or 'kvm' in virt_type.stdout"
+
+    - name: Install Essential Packages
+      command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; emerge app-backup/borgmatic app-emulation/qemu-guest-agent dev-vcs/git app-misc/screen sys-process/htop app-misc/hyfetch app-admin/needrestart net-misc/openssh sys-apps/rng-tools net-misc/networkmanager'"
+
+    - name: Import domain certificate
+      copy:
+        src: "{{ pem_file_path }}"
+        dest: /mnt/gentoo/usr/local/share/ca-certificates/
+      notify: Update CA certificates
+
+    - name: Enable root login via ssh keys
+      lineinfile:
+        path: /mnt/gentoo/etc/ssh/sshd_config
+        regexp: '^PermitRootLogin'
+        line: 'PermitRootLogin prohibit-password'
+        state: present
+
+    - name: Create neowofetch script in /etc/profile.d/
+      copy:
+        dest: /mnt/gentoo/etc/profile.d/neowofetch.sh
+        content: |
+          #!/bin/bash
+          if [[ -t 1 ]]; then
+            neowofetch
+          fi
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create .screenrc
+      copy:
+        dest: "/mnt/gentoo/etc/screenrc"
+        content: |
+          hardstatus alwayslastline
+          hardstatus string '%{= kG}[ %{G}%H %{g}][%= %{= kw}%?%-Lw%?%{+b m}(%{W}%n*%f%t%?(%u)%?%{m})%{-b w}%?%+Lw%?%?%= %{g}][%{c} %D %M %d %{g}%c %{g}]'
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Enable SSH
+      command: chroot /mnt/gentoo systemctl enable sshd
+
+    - name: Enable NetworkManager
+      command: chroot /mnt/gentoo systemctl enable NetworkManager
+
+    - name: Unmount chroot system dirs
+      command: umount -lR /mnt/gentoo/{dev,proc,sys,run}
+      changed_when: true
+      ignore_errors: true
+
+  handlers:
+  - name: Update CA certificates
+    command: "chroot /mnt/gentoo /bin/bash -c 'env-update && source /etc/profile; /usr/sbin/update-ca-certificates'"
+  
