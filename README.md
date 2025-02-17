@@ -19,7 +19,6 @@ This repository is my ongoing adventure in crafting a pristine Gentoo Linux syst
 ## Key Features (So Far):  
 - Minimalist Approach:  Focused on building a solid foundation with essential packages and a custom kernel.
 - Ansible Automation:  Utilizing Ansible for reproducible and efficient system configuration.
-- Kernel Customization:   Keywording, genkernel, and meticulous flag settings for optimal performance.
 - Neofetch Integration:  Because who doesn't love a good ASCII art representation of their system?
 - Ready for logging in: NetworkManager, OpenSSH and your authorized_keys file are installed - awaiting your login.
 - BTRFS: Using the power of subvolumes, partitioning is easy as pie.
