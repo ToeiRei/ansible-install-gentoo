@@ -88,6 +88,20 @@ nfs_portage_host: "nfs-server.local"  # If using NFS for Portage, specify the ho
 nfs_portage_path: "/path/to/Portage"  # The path to Portage on the NFS server
 ```
 
+## Frequently Asked Questions (FAQs)
+
+**Why on earth would you automate a Gentoo install?**
+> Look, sometimes even we tech wizards get tired of the same old grind. A vanilla Gentoo base install can be *so* tedious! This playbook is all about efficiency and letting you skip those boring steps while still having control over the core setup.
+
+ **Why Ansible? Why not something else?** 
+> Ansible's like the organized friend who always has a plan (and knows how to execute it). It's structured, easy to read, and lets me manage the installation in a clean, repeatable way. Plus,  it doesn't require an agent on the target machine – just SSH access! That means no extra software to install or configure. Sharing this playbook means others can benefit from the same sanity!
+
+ **Are you weird?**
+> Meow.  (Just kidding - sort of.)
+
+**How long does it take?**
+> On a VM with 4 cores and 8 GB of RAM (AMD EPYC 7282, KVM hypervisor), the entire process took roughly 2 hours. Keep in mind that runtime can vary depending on your hardware and network conditions.
+
 
 ## Need Help?
 
@@ -100,7 +114,7 @@ You're bound to run into the occasional hiccup – we all do!  Here's how you ca
 * **Pull Requests:** Wanna see some cool new features or have an idea to make things even better?  Send a pull request – I love collaborating and making this playbook the best it can be.
 
 ## Changes
-- **2025-02-16**:  Initial import, lots of swearing and wishing I would have never started
+- **2025-02-16**:  Initial import, lots of swearing and instant regret
 
 ##  To Do 
 
