@@ -1,22 +1,14 @@
----
-# this is the config for the playbook
+# This is the config for the playbook
 
-# disk configuration
-main_disk: "/dev/sda"
+# Disk Configuration 
+main_disk: "/dev/sda"  # The device where Gentoo will be installed.
 
-# Gentoo configuration
-## Stagefile mirror
-gentoo_mirror: "http://mirror.init7.net/gentoo/releases/amd64/autobuilds/current-stage3-amd64-systemd"
-## Profile
-gentoo_profile: "default/linux/amd64/23.0/systemd"
+# Gentoo Configuration
+gentoo_mirror: "http://mirror.init7.net/gentoo/releases/amd64/autobuilds/current-stage3-amd64-systemd" # Gentoo Stage 3 mirror URL
+gentoo_profile: "default/linux/amd64/23.0/systemd"  # The Gentoo profile to use
 
-# Your custom stuff:
-## Your root-ca cert file
-pem_file_path: "ucs-root-ca.pem"
-
-## Your authorized_keys file (public keys, so no harm on a webserver)
-authorized_keys_url: "https://go.stargazer.at/authorized_keys"
-
-## if Portage is on NFS
-nfs_portage_host: nfs-server.local
-nfs_portage_path: /path/to/Portage
+# Your Custom Settings
+pem_file_path: "ucs-root-ca.pem"   # Path to your root CA certificate file (e.g., for SSL verification) 
+authorized_keys_url: "https://go.stargazer.at/authorized_keys" # URL pointing to a file containing your public SSH keys
+nfs_portage_host: "nfs-server.local"  # If using NFS for Portage, specify the host name or IP address. (Example)
+nfs_portage_path: "/path/to/Portage"  # The path to Portage on the NFS server
