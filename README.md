@@ -1,12 +1,13 @@
-# My Gentoo Journey: A Barebones Installation Guide 
+# My Gentoo Journey: A Barebones Installation using Ansible
 
-This repository documents my ongoing adventure in crafting a pristine Gentoo Linux system from scratch.  
+This repository is my ongoing adventure in crafting a pristine Gentoo Linux system from scratch using Ansible
 
 ## What You'll Find Here:  
 
 - gentoo.yml:   A detailed Ansible playbook outlining the steps I take to build this barebones Gentoo installation. This includes kernel configuration, bootloader setup, essential package management, and more.
 - settings.yml: A file to customize this playbook so you do not have to deal with ansible.
 - Notes & Reflections:  As I delve deeper into the intricacies of Gentoo, you'll find notes on my experiences, troubleshooting tips, and maybe even some rants about obscure dependencies (it happens to the best of us).
+- Sarcasm & Copium: Let's be real, diving deep into Ansible was less of a controlled learning experience and more of a "I don't know what I'm doing but I'll figure it out (eventually)" freefall. Expect copious amounts of both sarcasm and copium as I navigate the labyrinthine world of YAML, modules, and templating.
 
 ## Who This Is For:  
 
