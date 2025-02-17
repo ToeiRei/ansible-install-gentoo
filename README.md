@@ -130,16 +130,14 @@ You're bound to run into the occasional hiccup – we all do!  Here's how you ca
 
 ## Changes
 - **2025-02-16**:  Initial import, lots of swearing and instant regret
+- **2025-02-17**:  Implemented validation for settings, smart NFS server handling, made rootcert optional, implemented hostname, wrote new To Dos
 
 ##  To Do 
 
 I'm constantly working to improve this playbook. Here are some things I plan to be tackling soon:
 
-* **Settings Validation:** Implement checks to ensure settings are valid (e.g., ensuring the `gentoo_mirror` URL is reachable). This will help prevent errors during installation.
-* **Smart NFS Handling:**  Don't attempt to use NFS if the `nfs_portage_*` variables aren't set. 
-* **Missing Config Checks:** Add checks for crucial configurations like SSH keys or certificates. If something's missing, provide clear guidance to the user on how to fix it.
-* **Optional Certificate Handling:**  Make the `pem_file_path` setting optional, allowing installations that don't require specific certificate verification.
-* **Hostname:** Set the hostname in the settings.yml file or as a parameter
+* **Encryption:** Implement LUKS FDE for covering portable devices
+* **GPG Token support:** Get support for GPG HW Token like Nitrokey to be used for ssh key storage
 
 Get Involved:   
 
