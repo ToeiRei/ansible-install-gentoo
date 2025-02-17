@@ -1,0 +1,22 @@
+---
+# this is the config for the playbook
+
+# disk configuration
+main_disk: "/dev/sda"
+
+# Gentoo configuration
+## Stagefile mirror
+gentoo_mirror: "http://mirror.init7.net/gentoo/releases/amd64/autobuilds/current-stage3-amd64-systemd"
+## Profile
+gentoo_profile: "default/linux/amd64/23.0/systemd"
+
+# Your custom stuff:
+## Your root-ca cert file
+pem_file_path: "ucs-root-ca.pem"
+
+## Your authorized_keys file (public keys, so no harm on a webserver)
+authorized_keys_url: "https://go.stargazer.at/authorized_keys"
+
+## if Portage is on NFS
+nfs_portage_host: nfs-server.local
+nfs_portage_path: /path/to/Portage
